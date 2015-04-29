@@ -1,6 +1,7 @@
 [pathstr, ~, ~] = fileparts(mfilename('fullpath'));
 addpath(genpath(pathstr));
-addpath(genpath(fullfile(pathstr, '../lfuf')));
+addpath(genpath(fullfile(pathstr, '../lfui')));
+addpath(genpath(fullfile(pathstr, '../matlab_tools')));
 
 %% Environement
 % set-up world
@@ -51,22 +52,20 @@ teacherPolicy = hypothesisPolicies{teacherHypothesis};
 
 features = teacherDispatcher.get_sample(1);
 disp('Ready')
-while 1
+% while 1
+for i = 1:50
     %%    
     disp('###')
     fprintf('Teacher target is %d\n', teacherHypothesis)
 
-    pause(1)
     disp('Sending feature and state.')
     state = environment.get_state();
     tcp.send_features_and_state(features, state)
     
-    pause(1)
+    pause(2)
     %%
     disp('Sending BLOCK.')
-    tcp.send(BLOCK, 1)
-    pause(1)
-    
+    tcp.send(BLOCK, 1)    
     disp('Waiting for action...')
     action = itu2griz_action(tcp.receive(1));
     environment.apply_action(action);

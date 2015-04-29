@@ -122,7 +122,8 @@ while 1
     rec.logit(iStep)
     
     %% choose and apply action
-    state = rec.environment.get_state(); rec.logit(state)
+    state = rec.environment.get_state();
+    rec.logit(state)
     
     action = 0;
     while ~is_action_BCI_valid(state, action)
@@ -156,54 +157,91 @@ while 1
         disp('')
         break
     end
-    rec.environment.set_state(nextState)
-    rec.log_field('teacherSignal', features);
     
-    %% compute hypothetic plabels
-    hypothesisPLabel = cellfun(@(hyp) rec.learnerFrame.compute_labels(hyp, state, action), rec.hypothesisPolicies, 'UniformOutput', false);
-    rec.log_multiple_fields(rec.hypothesisRecordNames, hypothesisPLabel)
-    
-    %% compute hypothesis probabilities
-    recorder_compute_proba(rec, rec.methodInfo)
-    
-    %% detect confidence
-    [isConfident, bestHypothesis] = recorder_check_confidence(rec, rec.methodInfo);
-    rec.logit(isConfident)
-    rec.logit(bestHypothesis)
-    
-    targetReached = bestHypothesis == rec.environment.currentState;
-    rec.logit(targetReached)
-    
-    if targetReached
-        % reset the learning process
-        recorder_reset_proba(rec, bestHypothesis, rec.methodInfo)
-        % change which hypothesis is the one taught by the teacher
-        teacherHypothesis = randi(rec.nHypothesis); % this will be recorded at each iteration so not now
-        teacherPolicy = rec.hypothesisPolicies{teacherHypothesis};
-        
-        % BCI send target reached information
-        disp('$$$$$$')
-        disp('Target reached with confidence, waiting for user input.')
-        disp('Enter "return", to continue with next target.')
-        disp('If you dbquit now, do not forget to save the results.')
-        keyboard
-        disp('Sending target reached information...')
-        tcp.send(TARGET_REACHED, 1)
-        disp('Waiting for confirmation...')
-        block = 0;
-        while block ~= BLOCK
-            block = tcp.receive(1);
+    %outliers
+    if max(features) > 20
+        disp('********************')
+        disp('* OUTLIER DETECTED *')
+        disp('*  IGNORING TRIAL  *')
+        disp('********************')
+        %delog stuff from logger
+        % not implemented in logger, so I do it by hand here cause I do not
+        % want to modify the Logger class for now
+        rec.iStep(end) = [];
+        for i = 1:length(rec.fields)
+            if strcmp(rec.fields{i}, 'iStep')
+                rec.nElementsFields(i) = rec.nElementsFields(i) - 1;
+            end
         end
+        
+        rec.state(end) = [];
+        for i = 1:length(rec.fields)
+            if strcmp(rec.fields{i}, 'state')
+                rec.nElementsFields(i) = rec.nElementsFields(i) - 1;
+            end
+        end
+        
+        rec.action(end) = [];
+        for i = 1:length(rec.fields)
+            if strcmp(rec.fields{i}, 'action')
+                rec.nElementsFields(i) = rec.nElementsFields(i) - 1;
+            end
+        end
+        
+        % here comes the ugliest part
+        iStep = iStep -1;
+        
+    else
+        
+        rec.environment.set_state(nextState)
+        rec.log_field('teacherSignal', features);
+        
+        %% compute hypothetic plabels
+        hypothesisPLabel = cellfun(@(hyp) rec.learnerFrame.compute_labels(hyp, state, action), rec.hypothesisPolicies, 'UniformOutput', false);
+        rec.log_multiple_fields(rec.hypothesisRecordNames, hypothesisPLabel)
+        
+        %% compute hypothesis probabilities
+        recorder_compute_proba(rec, rec.methodInfo)
+        
+        %% detect confidence
+        [isConfident, bestHypothesis] = recorder_check_confidence(rec, rec.methodInfo);
+        rec.logit(isConfident)
+        rec.logit(bestHypothesis)
+        
+        targetReached = bestHypothesis == rec.environment.currentState;
+        rec.logit(targetReached)
+        
+        if targetReached
+            % reset the learning process
+            recorder_reset_proba(rec, bestHypothesis, rec.methodInfo)
+            % change which hypothesis is the one taught by the teacher
+            teacherHypothesis = randi(rec.nHypothesis); % this will be recorded at each iteration so not now
+            teacherPolicy = rec.hypothesisPolicies{teacherHypothesis};
+            
+            % BCI send target reached information
+            disp('$$$$$$')
+            disp('Target reached with confidence, waiting for user input.')
+            disp('Enter "return", to continue with next target.')
+            disp('If you dbquit now, do not forget to save the results.')
+            keyboard
+            disp('Sending target reached information...')
+            tcp.send(TARGET_REACHED, 1)
+            disp('Waiting for confirmation...')
+            block = 0;
+            while block ~= BLOCK
+                block = tcp.receive(1);
+            end
+        end
+        
+        %% compute uncertainty
+        recorder_compute_uncertainty_map(rec, rec.uncertaintyMethod, rec.methodInfo)
+        
+        %% end loop
+        rec.log_field('stepTime', toc(stepTime))
     end
-    
-    %% compute uncertainty
-    recorder_compute_uncertainty_map(rec, rec.uncertaintyMethod, rec.methodInfo)
-    
-    %% end loop
-    rec.log_field('stepTime', toc(stepTime))
 end
 
-%%
+%% Saving
 disp('Saving...')
 folder = fullfile(pathstr, 'results');
 if ~exist(folder, 'dir')
